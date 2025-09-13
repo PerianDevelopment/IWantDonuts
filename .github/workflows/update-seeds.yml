@@ -1,0 +1,61 @@
+name: Update Seeds
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # run every hour (UTC)
+  workflow_dispatch:       # allow manual trigger
+
+jobs:
+  update-seeds:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set timezone to Europe/Berlin
+        run: |
+          sudo timedatectl set-timezone Europe/Berlin
+
+      - name: Check if it's 2 AM
+        run: |
+          HOUR=$(date +%H)
+          if [ "$HOUR" -ne "02" ]; then
+            echo "Not 2 AM in Berlin, exiting."
+            exit 0
+          fi
+
+      - name: Generate seeds
+        id: seeds
+        env:
+          SEED_SECRET: ${{ secrets.SEED_SECRET }}
+        run: |
+          # Always generate a new daily seed
+          DAILY=$(echo "${RANDOM}${SEED_SECRET}$(date +%s)" | sha256sum | tr -dc 'A-Z0-9' | head -c10)
+
+          # Only generate a new monthly seed if it's the 1st day of the month
+          DAY=$(date +%d)
+          if [ "$DAY" -eq "01" ]; then
+            MONTHLY=$(echo "${RANDOM}${SEED_SECRET}$(date +%s%N)" | sha256sum | tr -dc 'A-Z0-9' | head -c10)
+          else
+            # keep the old monthly seed from file
+            MONTHLY=$(jq -r '.monthly' seeds.json)
+          fi
+
+          echo "daily=$DAILY" >> $GITHUB_OUTPUT
+          echo "monthly=$MONTHLY" >> $GITHUB_OUTPUT
+
+      - name: Save seeds.json
+        run: |
+          echo "{
+            \"daily\": \"${{ steps.seeds.outputs.daily }}\",
+            \"monthly\": \"${{ steps.seeds.outputs.monthly }}\"
+          }" > seeds.json
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add seeds.json
+          git commit -m "Update seeds [skip ci]" || exit 0
+          git push
