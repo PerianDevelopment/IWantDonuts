@@ -2,7 +2,8 @@ name: Update Seeds
 
 on:
   schedule:
-    - cron: "0 * * * *"   # run every hour (UTC)
+    # Run at 00:00 UTC = 02:00 Berlin (summer), 01:00 Berlin (winter).
+    - cron: "0 0 * * *"
   workflow_dispatch:       # allow manual trigger
 
 permissions:
@@ -22,29 +23,28 @@ jobs:
         run: |
           sudo timedatectl set-timezone Europe/Berlin
 
-      - name: Check if it's 2 AM
-        run: |
-          HOUR=$(date +%H)
-          if [ "$HOUR" -ne "02" ]; then
-            echo "Not 2 AM in Berlin, exiting."
-            exit 0
-          fi
-
       - name: Generate seeds
         id: seeds
         env:
           SEED_SECRET: ${{ secrets.SEED_SECRET }}
         run: |
-          # Always generate a new daily seed (A-Z + 0-9, salted with secret)
-          DAILY=$(echo "${SEED_SECRET}$(openssl rand -base64 32)" | sha256sum | base64 | tr -dc 'A-Z0-9' | head -c10)
+          # New daily seed (A-Z + 0-9, salted with secret)
+          DAILY=$(echo "${SEED_SECRET}$(openssl rand -base64 32)" \
+            | sha256sum | base64 | tr -dc 'A-Z0-9' | head -c10)
 
-          # Only generate a new monthly seed if it's the 1st day of the month
+          # Only generate a new monthly seed if it's the 1st
           DAY=$(date +%d)
           if [ "$DAY" -eq "01" ]; then
-            MONTHLY=$(echo "${SEED_SECRET}$(openssl rand -base64 32)" | sha256sum | base64 | tr -dc 'A-Z0-9' | head -c10)
+            MONTHLY=$(echo "${SEED_SECRET}$(openssl rand -base64 32)" \
+              | sha256sum | base64 | tr -dc 'A-Z0-9' | head -c10)
           else
-            # keep the old monthly seed from file
-            MONTHLY=$(jq -r '.monthly' seeds.json)
+            # reuse last monthly seed
+            if [ -f seeds.json ]; then
+              MONTHLY=$(jq -r '.monthly' seeds.json)
+            else
+              MONTHLY=$(echo "${SEED_SECRET}$(openssl rand -base64 32)" \
+                | sha256sum | base64 | tr -dc 'A-Z0-9' | head -c10)
+            fi
           fi
 
           echo "daily=$DAILY" >> $GITHUB_OUTPUT
@@ -63,9 +63,11 @@ jobs:
           DAILY_ENTRY="{\"date\": \"${TODAY}\", \"seed\": \"${{ steps.seeds.outputs.daily }}\"}"
 
           if [ -f daily_history.json ]; then
-            # remove last ] then append new entry
-            jq ". + [${DAILY_ENTRY}]" daily_history.json > tmp.json
-            mv tmp.json daily_history.json
+            # only add if today isn't already in file
+            if ! jq -e ".[] | select(.date == \"${TODAY}\")" daily_history.json > /dev/null; then
+              jq ". + [${DAILY_ENTRY}]" daily_history.json > tmp.json
+              mv tmp.json daily_history.json
+            fi
           else
             echo "[${DAILY_ENTRY}]" > daily_history.json
           fi
@@ -76,8 +78,11 @@ jobs:
           MONTHLY_ENTRY="{\"month\": \"${MONTH}\", \"seed\": \"${{ steps.seeds.outputs.monthly }}\"}"
 
           if [ -f monthly_history.json ]; then
-            jq ". + [${MONTHLY_ENTRY}]" monthly_history.json > tmp.json
-            mv tmp.json monthly_history.json
+            # only add if this month isn't already in file
+            if ! jq -e ".[] | select(.month == \"${MONTH}\")" monthly_history.json > /dev/null; then
+              jq ". + [${MONTHLY_ENTRY}]" monthly_history.json > tmp.json
+              mv tmp.json monthly_history.json
+            fi
           else
             echo "[${MONTHLY_ENTRY}]" > monthly_history.json
           fi
