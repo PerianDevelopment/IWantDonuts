@@ -35,13 +35,13 @@ jobs:
         env:
           SEED_SECRET: ${{ secrets.SEED_SECRET }}
         run: |
-          # Always generate a new daily seed
-          DAILY=$(echo "${RANDOM}${SEED_SECRET}$(date +%s)" | sha256sum | tr -dc 'A-Z0-9' | head -c10)
+          # Always generate a new daily seed (A-Z + 0-9)
+          DAILY=$(openssl rand -base64 20 | tr -dc 'A-Z0-9' | head -c10)
 
           # Only generate a new monthly seed if it's the 1st day of the month
           DAY=$(date +%d)
           if [ "$DAY" -eq "01" ]; then
-            MONTHLY=$(echo "${RANDOM}${SEED_SECRET}$(date +%s%N)" | sha256sum | tr -dc 'A-Z0-9' | head -c10)
+            MONTHLY=$(openssl rand -base64 20 | tr -dc 'A-Z0-9' | head -c10)
           else
             # keep the old monthly seed from file
             MONTHLY=$(jq -r '.monthly' seeds.json)
