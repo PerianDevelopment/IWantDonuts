@@ -6,7 +6,7 @@ on:
   workflow_dispatch:       # allow manual trigger
 
 permissions:
-  contents: write          # allow pushing changes back to repo
+  contents: write
 
 jobs:
   update-seeds:
@@ -50,17 +50,42 @@ jobs:
           echo "daily=$DAILY" >> $GITHUB_OUTPUT
           echo "monthly=$MONTHLY" >> $GITHUB_OUTPUT
 
-      - name: Save seeds.json
+      - name: Save seeds.json (current only)
         run: |
           echo "{
             \"daily\": \"${{ steps.seeds.outputs.daily }}\",
             \"monthly\": \"${{ steps.seeds.outputs.monthly }}\"
           }" > seeds.json
 
+      - name: Update daily_history.json
+        run: |
+          TODAY=$(date +%Y-%m-%d)
+          DAILY_ENTRY="{\"date\": \"${TODAY}\", \"seed\": \"${{ steps.seeds.outputs.daily }}\"}"
+
+          if [ -f daily_history.json ]; then
+            # remove last ] then append new entry
+            jq ". + [${DAILY_ENTRY}]" daily_history.json > tmp.json
+            mv tmp.json daily_history.json
+          else
+            echo "[${DAILY_ENTRY}]" > daily_history.json
+          fi
+
+      - name: Update monthly_history.json
+        run: |
+          MONTH=$(date +%Y-%m)
+          MONTHLY_ENTRY="{\"month\": \"${MONTH}\", \"seed\": \"${{ steps.seeds.outputs.monthly }}\"}"
+
+          if [ -f monthly_history.json ]; then
+            jq ". + [${MONTHLY_ENTRY}]" monthly_history.json > tmp.json
+            mv tmp.json monthly_history.json
+          else
+            echo "[${MONTHLY_ENTRY}]" > monthly_history.json
+          fi
+
       - name: Commit and push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add seeds.json
+          git add seeds.json daily_history.json monthly_history.json
           git commit -m "Update seeds [skip ci]" || exit 0
           git push
