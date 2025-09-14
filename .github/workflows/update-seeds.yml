@@ -1,10 +1,7 @@
 name: Update Seeds
 
 on:
-  schedule:
-    # Run at 00:00 UTC = 02:00 Berlin (summer), 01:00 Berlin (winter).
-    - cron: "0 0 * * *"
-  workflow_dispatch:       # allow manual trigger
+  workflow_dispatch:       # only manual trigger
 
 permissions:
   contents: write
