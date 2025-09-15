@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout main branch
+      - name: Checkout repository
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -36,8 +36,8 @@ jobs:
               | sha256sum | base64 | tr -dc 'A-Z0-9' | head -c10)
           else
             # reuse last monthly seed
-            if [ -f seeds.json ]; then
-              MONTHLY=$(jq -r '.monthly' seeds.json)
+            if [ -f docs/seeds.json ]; then
+              MONTHLY=$(jq -r '.monthly' docs/seeds.json)
             else
               MONTHLY=$(echo "${SEED_SECRET}$(openssl rand -base64 32)" \
                 | sha256sum | base64 | tr -dc 'A-Z0-9' | head -c10)
@@ -47,12 +47,13 @@ jobs:
           echo "daily=$DAILY" >> $GITHUB_OUTPUT
           echo "monthly=$MONTHLY" >> $GITHUB_OUTPUT
 
-      - name: Save seeds.json (current only)
+      - name: Save seeds.json into docs
         run: |
+          mkdir -p docs
           echo "{
             \"daily\": \"${{ steps.seeds.outputs.daily }}\",
             \"monthly\": \"${{ steps.seeds.outputs.monthly }}\"
-          }" > seeds.json
+          }" > docs/seeds.json
 
       - name: Update daily_history.json
         run: |
@@ -60,6 +61,7 @@ jobs:
           DAILY_ENTRY="{\"date\": \"${TODAY}\", \"seed\": \"${{ steps.seeds.outputs.daily }}\"}"
 
           if [ -f daily_history.json ]; then
+            # only add if today isn't already in file
             if ! jq -e ".[] | select(.date == \"${TODAY}\")" daily_history.json > /dev/null; then
               jq ". + [${DAILY_ENTRY}]" daily_history.json > tmp.json
               mv tmp.json daily_history.json
@@ -74,6 +76,7 @@ jobs:
           MONTHLY_ENTRY="{\"month\": \"${MONTH}\", \"seed\": \"${{ steps.seeds.outputs.monthly }}\"}"
 
           if [ -f monthly_history.json ]; then
+            # only add if this month isn't already in file
             if ! jq -e ".[] | select(.month == \"${MONTH}\")" monthly_history.json > /dev/null; then
               jq ". + [${MONTHLY_ENTRY}]" monthly_history.json > tmp.json
               mv tmp.json monthly_history.json
@@ -82,20 +85,10 @@ jobs:
             echo "[${MONTHLY_ENTRY}]" > monthly_history.json
           fi
 
-      - name: Commit and push changes to main
+      - name: Commit and push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add seeds.json daily_history.json monthly_history.json
+          git add docs/seeds.json daily_history.json monthly_history.json
           git commit -m "Update seeds [skip ci]" || exit 0
           git push
-
-      - name: Publish seeds.json to gh-pages
-        run: |
-          # fetch gh-pages branch into subfolder
-          git fetch origin gh-pages
-          git checkout gh-pages -- .
-          cp seeds.json .
-          git add seeds.json
-          git commit -m "Update seeds.json for Pages [skip ci]" || exit 0
-          git push origin gh-pages
