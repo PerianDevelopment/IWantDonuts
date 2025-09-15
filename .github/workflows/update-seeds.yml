@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout main branch
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -60,7 +60,6 @@ jobs:
           DAILY_ENTRY="{\"date\": \"${TODAY}\", \"seed\": \"${{ steps.seeds.outputs.daily }}\"}"
 
           if [ -f daily_history.json ]; then
-            # only add if today isn't already in file
             if ! jq -e ".[] | select(.date == \"${TODAY}\")" daily_history.json > /dev/null; then
               jq ". + [${DAILY_ENTRY}]" daily_history.json > tmp.json
               mv tmp.json daily_history.json
@@ -75,7 +74,6 @@ jobs:
           MONTHLY_ENTRY="{\"month\": \"${MONTH}\", \"seed\": \"${{ steps.seeds.outputs.monthly }}\"}"
 
           if [ -f monthly_history.json ]; then
-            # only add if this month isn't already in file
             if ! jq -e ".[] | select(.month == \"${MONTH}\")" monthly_history.json > /dev/null; then
               jq ". + [${MONTHLY_ENTRY}]" monthly_history.json > tmp.json
               mv tmp.json monthly_history.json
@@ -84,10 +82,20 @@ jobs:
             echo "[${MONTHLY_ENTRY}]" > monthly_history.json
           fi
 
-      - name: Commit and push changes
+      - name: Commit and push changes to main
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add seeds.json daily_history.json monthly_history.json
           git commit -m "Update seeds [skip ci]" || exit 0
           git push
+
+      - name: Publish seeds.json to gh-pages
+        run: |
+          # fetch gh-pages branch into subfolder
+          git fetch origin gh-pages
+          git checkout gh-pages -- .
+          cp seeds.json .
+          git add seeds.json
+          git commit -m "Update seeds.json for Pages [skip ci]" || exit 0
+          git push origin gh-pages
